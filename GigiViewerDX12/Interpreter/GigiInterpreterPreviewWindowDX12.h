@@ -541,6 +541,7 @@ public:
 		bool BLASOpaque = true;
 		bool BLASNoDuplicateAnyhitInvocations = false;
 		bool IsAABBs = false; // only for ray tracing AABBs which have an intersection shader
+		bool IsMaterialBuffer = false;
 	};
 
 	struct ImportedResourceDesc

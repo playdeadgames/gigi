@@ -120,8 +120,19 @@ struct RuntimeTypes
 			{
 			}
 
+			MaterialInfo()
+				: used(false)
+			{};
+
 			std::string name;
 			bool used;
+
+			Vec3 baseColor = { 0.f, 0.f, 0.f };
+			Vec3 emissive = { 0.f, 0.f, 0.f };
+			Vec3 emissiveColor = { 1.f, 1.f, 1.f };
+			float roughness = 0.8f;
+			float metallic = 0.f;
+			float emissiveMultiplier = 0.f;
 		};
 
 		// From mesh data
