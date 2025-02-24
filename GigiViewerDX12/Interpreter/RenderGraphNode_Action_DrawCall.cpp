@@ -39,6 +39,10 @@ struct SemanticEnumToString
 	void Function_UV() { m_string = "TEXCOORD"; m_semanticIndex = (int)StructFieldSemantic::UV; }
 	void Function_MaterialID() { m_string = "TEXCOORD"; m_semanticIndex = (int)StructFieldSemantic::UV; }
 	void Function_ShapeID() { m_string = "TEXCOORD"; m_semanticIndex = (int)StructFieldSemantic::UV; }
+	void Function_Material_BaseColor() { m_string = "TEXCOORD"; m_semanticIndex = (int)StructFieldSemantic::Material_BaseColor; }
+	void Function_Material_Emissive() { m_string = "TEXCOORD"; m_semanticIndex = (int)StructFieldSemantic::Material_Emissive; }
+	void Function_Material_Roughness() { m_string = "TEXCOORD"; m_semanticIndex = (int)StructFieldSemantic::Material_Roughness; }
+	void Function_Material_Metallic() { m_string = "TEXCOORD"; m_semanticIndex = (int)StructFieldSemantic::Material_Metallic; }
 	void Function_Count() { m_string = "TEXCOORD"; m_semanticIndex = (int)StructFieldSemantic::UV; } // If no semantic given, use auto incrementing texture coordinates
 	const char* m_string = "";
 	int m_semanticIndex = -1;

@@ -21,8 +21,17 @@ public:
 
 	struct FBXData
 	{
+		struct Material
+		{
+			std::string name;
+			Vec3 diffuseColor;
+			Vec3 emissiveColor;
+			float emissiveMultiplier;
+		};
+
 		std::string warn, error;
 		std::vector<FlattenedVertex> flattenedVertices;
+		std::vector<Material> materials;
 		bool valid = false;
 	};
 

@@ -82,6 +82,7 @@ STRUCT_BEGIN(GGUserFile_ImportedBuffer, "The details of an imported buffer")
 	STRUCT_FIELD(bool, BLASOpaque, false, "DXR BLAS Option", 0)
 	STRUCT_FIELD(bool, BLASNoDuplicateAnyhitInvocations, false, "DXR BLAS Option", 0)
 	STRUCT_FIELD(bool, IsAABBs, false, "Set to true if ray tracing AABBs with intersection shaders. Format is Min XYZ, Max XYZ.", 0)
+	STRUCT_FIELD(bool, IsMaterialBuffer, false, "Set to true if buffer should represent materials", 0)
 STRUCT_END()
 
 STRUCT_BEGIN(GGUserFile_ImportedResource, "The details of an imported resource")

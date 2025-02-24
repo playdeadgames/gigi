@@ -164,6 +164,13 @@ static bool g_forceEnableProfiling = false;
 static bool g_meshInfoOpenPopup = false;
 static std::string g_meshInfoName = "";
 
+static bool g_materialsInfoOpenPopup = false;
+static std::string g_materialInfoName = "";
+static GigiInterpreterPreviewWindowDX12::ImportedResourceDesc* g_materialsBufferDesc = nullptr;
+
+static bool g_materialOpenPopup = false;
+static size_t g_materialPopupIndex = 0;
+
 RecentFiles g_recentFiles("Software\\GigiViewer");
 RecentFiles g_recentPythonScripts("Software\\GigiViewerPy");
 
@@ -697,6 +704,7 @@ GigiInterpreterPreviewWindowDX12::ImportedResourceDesc GGUserFile_ImportedResour
         outDesc.buffer.BLASOpaque = inDesc.buffer.BLASOpaque;
         outDesc.buffer.BLASNoDuplicateAnyhitInvocations = inDesc.buffer.BLASNoDuplicateAnyhitInvocations;
         outDesc.buffer.IsAABBs = inDesc.buffer.IsAABBs;
+        outDesc.buffer.IsMaterialBuffer = inDesc.buffer.IsMaterialBuffer;
     }
 
     return outDesc;
@@ -748,6 +756,7 @@ GGUserFile_ImportedResource ImportedResourceDesc_To_GGUserFile_ImportedResource(
         outDesc.buffer.BLASOpaque = inDesc.buffer.BLASOpaque;
         outDesc.buffer.BLASNoDuplicateAnyhitInvocations = inDesc.buffer.BLASNoDuplicateAnyhitInvocations;
         outDesc.buffer.IsAABBs = inDesc.buffer.IsAABBs;
+        outDesc.buffer.IsMaterialBuffer = inDesc.buffer.IsMaterialBuffer;
     }
 
     return outDesc;
@@ -3154,6 +3163,10 @@ void ShowImportedResources()
                 "In the file up to the first newline character."
             );
 
+			if (ImGui::Checkbox("Is Material Buffer", &desc.buffer.IsMaterialBuffer))
+				desc.state = GigiInterpreterPreviewWindowDX12::ImportedResourceState::dirty;
+			ShowToolTip("Set to true if the buffer should represent the materials in the imported mesh");
+
             const RenderGraphNode_Resource_Buffer& bufferNode = g_interpreter.GetRenderGraph().nodes[desc.nodeIndex].resourceBuffer;
 
             // Ray tracing specific stuff
@@ -3286,15 +3299,32 @@ void ShowImportedResources()
                 RuntimeTypes::RenderGraphNode_Resource_Buffer& runtimeData = g_interpreter.GetRuntimeNodeData_RenderGraphNode_Resource_Buffer(importedResourceInfo.originalName.c_str(), exists);
                 if (exists)
                 {
-                    if (runtimeData.materials.size() > 0)
+                    if (importedResourceInfo.desc->buffer.IsMaterialBuffer)
                     {
-                        if (ImGui::Button("Mesh Info"))
+                        if (runtimeData.materials.size() > 0)
                         {
-                            g_meshInfoOpenPopup = true;
-                            g_meshInfoName = importedResourceInfo.originalName;
-                        }
+                            if (ImGui::Button("Materials"))
+                            {
+                                g_materialsInfoOpenPopup = true;
+                                g_materialInfoName = importedResourceInfo.originalName;
+                                g_materialsBufferDesc = importedResourceInfo.desc;
+                            }
 
-                        ImGui::SameLine();
+                            ImGui::SameLine();
+                        }
+                    }
+                    else
+                    {
+						if (runtimeData.materials.size() > 0)
+						{
+							if (ImGui::Button("Mesh Info"))
+							{
+								g_meshInfoOpenPopup = true;
+								g_meshInfoName = importedResourceInfo.originalName;
+							}
+
+							ImGui::SameLine();
+						}
                     }
                 }
             }
@@ -3318,6 +3348,18 @@ void ShowImGuiWindows()
     {
         ImGui::OpenPopup("Mesh Info Popup");
         g_meshInfoOpenPopup = false;
+    }
+
+    if (g_materialsInfoOpenPopup)
+    {
+        ImGui::OpenPopup("Materials Info Popup");
+        g_materialsInfoOpenPopup = false;
+    }
+
+    if (g_materialOpenPopup)
+    {
+        ImGui::OpenPopup("Material Popup");
+        g_materialOpenPopup = false;
     }
 
     if (ImGui::BeginPopup("Mesh Info Popup", ImGuiWindowFlags_AlwaysAutoResize))
@@ -3367,6 +3409,83 @@ void ShowImGuiWindows()
         //if (ImGui::Button("OK"))
             //ImGui::CloseCurrentPopup();
 
+        ImGui::EndPopup();
+    }
+
+    if (ImGui::BeginPopup("Materials Info Popup", ImGuiWindowFlags_AlwaysAutoResize))
+    {
+		bool exists = false;
+		RuntimeTypes::RenderGraphNode_Resource_Buffer& runtimeData = g_interpreter.GetRuntimeNodeData_RenderGraphNode_Resource_Buffer(g_materialInfoName.c_str(), exists);
+        if (exists)
+        {
+			ImGui::Text("%s", g_materialInfoName.c_str());
+			ImGui::Text("Materials: %i", (int)runtimeData.materials.size());
+			if (ImGui::BeginTable("Materials", 2, ImGuiTableFlags_Borders))
+			{
+				for (size_t i = 0; i < runtimeData.materials.size(); ++i)
+				{
+					const auto& materialInfo = runtimeData.materials[i];
+
+					if (!materialInfo.used)
+						ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 128));
+
+					ImGui::TableNextColumn();
+					ImGui::Text("%i", (int)i);
+					ImGui::TableNextColumn();
+                    if (ImGui::Button(materialInfo.name.c_str()))
+                    {
+                        g_materialOpenPopup = true;
+                        g_materialPopupIndex = i;
+                    }
+
+					if (!materialInfo.used)
+						ImGui::PopStyleColor();
+				}
+				ImGui::EndTable();
+			}
+        }
+
+        ImGui::EndPopup();
+    }
+
+    if (ImGui::BeginPopup("Material Popup", ImGuiWindowFlags_AlwaysAutoResize))
+    {
+		bool exists = false;
+		RuntimeTypes::RenderGraphNode_Resource_Buffer& runtimeData = g_interpreter.GetRuntimeNodeData_RenderGraphNode_Resource_Buffer(g_materialInfoName.c_str(), exists);
+        if (exists)
+        {
+            if (g_materialPopupIndex < runtimeData.materials.size())
+            {
+                auto& material = runtimeData.materials.at(g_materialPopupIndex);
+
+                ImGui::Text("%s", material.name.c_str());
+
+                bool updated = false;
+
+                updated |= ImGui::ColorEdit3("Base Color", material.baseColor.data());
+                if (ImGui::ColorEdit3("Emissive Color", material.emissiveColor.data()))
+                {
+					material.emissive[0] = material.emissiveColor[0] * material.emissiveMultiplier;
+					material.emissive[1] = material.emissiveColor[1] * material.emissiveMultiplier;
+					material.emissive[2] = material.emissiveColor[2] * material.emissiveMultiplier;
+                    updated = true;
+                }
+                if (ImGui::DragFloat("Emissive Multiplier", &material.emissiveMultiplier))
+                {
+					material.emissive[0] = material.emissiveColor[0] * material.emissiveMultiplier;
+					material.emissive[1] = material.emissiveColor[1] * material.emissiveMultiplier;
+					material.emissive[2] = material.emissiveColor[2] * material.emissiveMultiplier;
+                    updated = true;
+                }
+                updated |= ImGui::DragFloat("Roughness", &material.roughness);
+                updated |= ImGui::DragFloat("Metallic", &material.metallic);
+
+                if (updated)
+                {
+					g_materialsBufferDesc->state = GigiInterpreterPreviewWindowDX12::ImportedResourceState::dirty;
+                }
+            }
+        }
         ImGui::EndPopup();
     }
 

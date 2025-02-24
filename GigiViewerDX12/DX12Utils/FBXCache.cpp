@@ -89,12 +89,26 @@ FBXCache::FBXData& FBXCache::Get(FileCache& fileCache, const char* fileName_)
 			const ofbx::Mesh* mesh = fbxScene->getMesh(meshIndex);
 			const int materialCount = mesh->getMaterialCount();
 
+			fbxData.materials.resize(materialCount);
+
 			for (int matIndex = 0; matIndex < materialCount; ++matIndex)
 			{
 				auto& importMesh = importMeshes.emplace_back();
 				importMesh.fbxMesh = mesh;
 				importMesh.materialID = matIndex;
 				importMesh.submeshIndex = matIndex;
+
+				auto material = mesh->getMaterial(matIndex);
+				fbxData.materials[matIndex].diffuseColor[0] = material->getDiffuseColor().r;
+				fbxData.materials[matIndex].diffuseColor[1] = material->getDiffuseColor().g;
+				fbxData.materials[matIndex].diffuseColor[2] = material->getDiffuseColor().b;
+
+				fbxData.materials[matIndex].emissiveColor[0] = material->getEmissiveColor().r;
+				fbxData.materials[matIndex].emissiveColor[1] = material->getEmissiveColor().g;
+				fbxData.materials[matIndex].emissiveColor[2] = material->getEmissiveColor().b;
+			
+				fbxData.materials[matIndex].emissiveMultiplier = static_cast<float>(material->getEmissiveFactor());
+				fbxData.materials[matIndex].name = material->name;
 			}
 		}
 	}

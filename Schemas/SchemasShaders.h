@@ -87,6 +87,11 @@ ENUM_BEGIN(StructFieldSemantic, "Used to specify if the struct field has special
     ENUM_ITEM(UV, "float2")
     ENUM_ITEM(MaterialID, "int")
     ENUM_ITEM(ShapeID, "int")
+
+    ENUM_ITEM(Material_BaseColor, "float3")
+    ENUM_ITEM(Material_Emissive, "float3")
+    ENUM_ITEM(Material_Roughness, "float")
+    ENUM_ITEM(Material_Metallic, "float")
     ENUM_ITEM(Count, "")
 ENUM_END()
 
