@@ -72,6 +72,7 @@
     <ClCompile Include="..\external\imgui-node-editor\external\imgui\imgui_stdlib.cpp">
       <Filter>imgui</Filter>
     </ClCompile>
+    <ClCompile Include="EditorActionStack.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="imgui">
@@ -192,6 +193,7 @@
     <ClInclude Include="..\external\imgui-node-editor\external\imgui\imgui_stdlib.h">
       <Filter>imgui</Filter>
     </ClInclude>
+    <ClInclude Include="EditorActionStack.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\external\imgui-node-editor\imgui_bezier_math.inl">
