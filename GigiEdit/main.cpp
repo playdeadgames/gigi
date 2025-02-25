@@ -87,6 +87,9 @@ ed::LinkId g_contextMenuLinkId;
 
 int g_createdNodeIndex = -1;
 
+// Used for undo/redo
+RenderGraph g_renderGraphFrameCopy;
+
 struct DataWindowState
 {
     bool show = true;
@@ -1450,7 +1453,7 @@ struct Example :
                     g_renderGraphDirty |= dirty;
                     if (dirty)
                     {
-						PushRenderGraphToEditorCommandStack();
+						m_editorActionStack.Push(g_renderGraphFrameCopy);
                     }
                 }
 
@@ -1509,7 +1512,7 @@ struct Example :
 
                 if (dirty)
                 {
-                    PushRenderGraphToEditorCommandStack();
+					m_editorActionStack.Push(g_renderGraphFrameCopy);
                 }
 
 				std::string newNodeName = GetNodeName(node);
@@ -1842,7 +1845,7 @@ struct Example :
             g_renderGraphDirty |= dirty;
             if (dirty)
             {
-                PushRenderGraphToEditorCommandStack();
+				m_editorActionStack.Push(g_renderGraphFrameCopy);
             }
         }
         ImGui::EndChild();
@@ -2073,7 +2076,7 @@ struct Example :
             EnsureVariableExists("ShadingRateImageTileSize", VariableVisibility::Host, DataFieldType::Uint, "16");
             EnsureVariableExists("WindowSize", VariableVisibility::Host, DataFieldType::Float2, "1.0f, 1.0f");
 
-            PushRenderGraphToEditorCommandStack();
+			m_editorActionStack.Push(g_renderGraphFrameCopy);
         }
 
         // Global property editing
@@ -2082,7 +2085,7 @@ struct Example :
 
         if (changed)
         {
-            PushRenderGraphToEditorCommandStack();
+			m_editorActionStack.Push(g_renderGraphFrameCopy);
         }
 
         // todo: move
@@ -2476,6 +2479,8 @@ struct Example :
             }
         }
 
+        g_renderGraphFrameCopy = g_renderGraph;
+
         HandleMainMenu();
 
         ShowShadersWindow();
@@ -2772,7 +2777,7 @@ struct Example :
                             *destNodeInfo[destPinIndex].inputNodePin = src.pin;
                             g_renderGraphDirty = true;
 
-                            PushRenderGraphToEditorCommandStack();
+							m_editorActionStack.Push(g_renderGraphFrameCopy);
                         }
 
                     }
@@ -2799,7 +2804,7 @@ struct Example :
 
 				if (!deleteLinkIds.empty())
 				{
-					PushRenderGraphToEditorCommandStack();
+					m_editorActionStack.Push(g_renderGraphFrameCopy);
 				}
 
                 // delete links
@@ -2828,7 +2833,7 @@ struct Example :
 
 				if (!deleteNodeIds.empty())
 				{
-					PushRenderGraphToEditorCommandStack();
+					m_editorActionStack.Push(g_renderGraphFrameCopy);
 				}
 
                 // delete each node
@@ -2911,7 +2916,7 @@ struct Example :
                                 node.condition.alwaysFalse = !node.condition.alwaysFalse;
                                 g_renderGraphDirty = true;
 
-                                PushRenderGraphToEditorCommandStack();
+								m_editorActionStack.Push(g_renderGraphFrameCopy);
                             }
                         }
                         else
@@ -2921,7 +2926,7 @@ struct Example :
                                 node.condition.alwaysFalse = !node.condition.alwaysFalse;
                                 g_renderGraphDirty = true;
 
-                                PushRenderGraphToEditorCommandStack();
+								m_editorActionStack.Push(g_renderGraphFrameCopy);
                             }
                         }
                     }
@@ -2978,7 +2983,7 @@ struct Example :
                     m_newNodePositions[(int)g_renderGraph.nodes.size()] = newNodePostion;
 
                     g_renderGraphDirty = true;
-                    PushRenderGraphToEditorCommandStack();
+					m_editorActionStack.Push(g_renderGraphFrameCopy);
                 }
 
                 if (ImGui::MenuItem("Delete"))
@@ -3012,7 +3017,7 @@ struct Example :
                 int linkId = int(g_contextMenuLinkId.Get());
                 DeleteLink(linkId);
 
-                PushRenderGraphToEditorCommandStack();
+				m_editorActionStack.Push(g_renderGraphFrameCopy);
             }
 
             ImGui::PopStyleColor();
@@ -3061,7 +3066,7 @@ struct Example :
                     g_renderGraph.nodes.push_back(newNode); \
                     m_newNodePositions[(int)g_renderGraph.nodes.size()] = newNodePostion; \
                     g_renderGraphDirty = true; \
-                    PushRenderGraphToEditorCommandStack(); \
+					m_editorActionStack.Push(g_renderGraphFrameCopy); \
                     g_createdNodeIndex = (int)g_renderGraph.nodes.size(); \
                 } \
                 ImGui::PopStyleColor();
@@ -3086,7 +3091,7 @@ struct Example :
                 ed::SetGroupSize(node.id, defaultSize);
 
                 g_renderGraphDirty = true;
-                PushRenderGraphToEditorCommandStack();
+				m_editorActionStack.Push(g_renderGraphFrameCopy);
             }
 
             ImGui::EndPopup();
