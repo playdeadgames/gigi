@@ -34,6 +34,7 @@
 
 #include "PreviewServer.h"
 #include "ui/RecentFiles.h"
+#include "EditorActionStack.h"
 // clang-format on
 
 // Prototypes for functions that the UI wants to call.
@@ -73,6 +74,7 @@ RenderGraph g_renderGraph;
 std::string g_renderGraphFileName = "";
 bool g_renderGraphDirty = false;
 bool g_renderGraphFirstFrame = false;
+bool g_renderGraphStateUpdated = false;
 std::string g_currentWindowTitle;
 GigiBuildFlavor g_gigiBuildFlavor = GigiBuildFlavor::DX12_Module;
 
@@ -84,6 +86,9 @@ ed::NodeId g_contextMenuNodeId;
 ed::LinkId g_contextMenuLinkId;
 
 int g_createdNodeIndex = -1;
+
+// Used for undo/redo
+RenderGraph g_renderGraphFrameCopy;
 
 struct DataWindowState
 {
@@ -523,7 +528,29 @@ struct Example :
         s_thisExample = this;
 
         ed::Config config;
-        config.SaveSettings = [](const char* data, size_t size, ed::SaveReasonFlags reason, void* userPointer) { return true; };
+		config.UserPointer = this;
+        config.SaveSettings = [](const char* data, size_t size, ed::SaveReasonFlags reason, void* userPointer) 
+        {
+            if (g_renderGraphFirstFrame || g_renderGraphStateUpdated)
+            {
+                return true;
+            }
+
+            if ((reason & ed::SaveReasonFlags::AddNode) != ed::SaveReasonFlags::None ||
+                (reason & ed::SaveReasonFlags::RemoveNode) != ed::SaveReasonFlags::None ||
+                (reason & ed::SaveReasonFlags::Selection) != ed::SaveReasonFlags::None)
+            {
+                return true;
+            }
+
+            if ((reason & ed::SaveReasonFlags::Size) != ed::SaveReasonFlags::None ||
+                (reason & ed::SaveReasonFlags::Position) != ed::SaveReasonFlags::None)
+            {
+                reinterpret_cast<Example*>(userPointer)->PushRenderGraphToEditorCommandStack();
+            }
+
+            return true; 
+        };
         m_Context = ed::CreateEditor(&config);
 
         auto& io = ImGui::GetIO();
@@ -593,6 +620,8 @@ struct Example :
                 EditorShowMessageBox(fullMessage.c_str());
                 m_BuildOutputBuffer.emplace_back(MessageType::Warn, fullMessage);
             }
+
+            m_editorActionStack.Clear();
         }
         else
         {
@@ -653,6 +682,8 @@ struct Example :
 			ed::ClearSelection();
 
             OnChangeGGFileName(false);
+
+			m_editorActionStack.Clear();
 		}
     }
 
@@ -661,8 +692,10 @@ struct Example :
 		if (!g_renderGraphDirty || AskForConfirmation("You have unsaved changes, are you sure you want to proceed?"))
 		{
 			nfdchar_t* outPath = nullptr;
-			if (NFD_OpenDialog("gg", "Techniques", &outPath) == NFD_OKAY)
+            if (NFD_OpenDialog("gg", "Techniques", &outPath) == NFD_OKAY)
+            {
 				LoadJSONFile(outPath);
+            }
 		}
     }
 
@@ -1411,9 +1444,17 @@ struct Example :
                 {
                     std::vector<NodePinInfo> nodePinInfo = GetNodePins(g_renderGraph, g_renderGraph.nodes[linkedNodeIndex]);
 
+                    bool dirty = false;
+
                     int pinIndex = GetNodePinIndexByName(nodePinInfo, linkInfo.destPin.c_str());
                     if (pinIndex >= 0)
-                        g_renderGraphDirty |= ShowUI(g_renderGraph, nullptr, nullptr, *nodePinInfo[pinIndex].linkProperties, TypePaths::Make(TypePaths::cEmpty, TypePaths::RenderGraph::cStruct, TypePaths::RenderGraph::c_nodes));
+                        dirty = ShowUI(g_renderGraph, nullptr, nullptr, *nodePinInfo[pinIndex].linkProperties, TypePaths::Make(TypePaths::cEmpty, TypePaths::RenderGraph::cStruct, TypePaths::RenderGraph::c_nodes));
+                
+                    g_renderGraphDirty |= dirty;
+                    if (dirty)
+                    {
+						m_editorActionStack.Push(g_renderGraphFrameCopy);
+                    }
                 }
 
                 ImGui::Unindent();
@@ -1464,7 +1505,15 @@ struct Example :
 
 				ImGui::TextUnformatted(title.c_str());
 				ImGui::Indent();
-				g_renderGraphDirty |= ShowUI(g_renderGraph, nullptr, nullptr, node, TypePaths::Make(TypePaths::cEmpty, TypePaths::RenderGraph::cStruct, TypePaths::RenderGraph::c_nodes));
+
+                
+                bool dirty = ShowUI(g_renderGraph, nullptr, nullptr, node, TypePaths::Make(TypePaths::cEmpty, TypePaths::RenderGraph::cStruct, TypePaths::RenderGraph::c_nodes));
+                g_renderGraphDirty |= dirty;
+
+                if (dirty)
+                {
+					m_editorActionStack.Push(g_renderGraphFrameCopy);
+                }
 
 				std::string newNodeName = GetNodeName(node);
 
@@ -1729,14 +1778,16 @@ struct Example :
         const std::string scrollableId = std::string(dataName) + "##scrollable";
         if (ImGui::BeginChild(scrollableId.c_str()))
         {
+            bool dirty = false;
+
 			if (selectedIndex < dataList.size())
-				g_renderGraphDirty |= ShowUI(g_renderGraph, nullptr, nullptr, dataList[selectedIndex], path);
+                dirty = ShowUI(g_renderGraph, nullptr, nullptr, dataList[selectedIndex], path);
 
 			// delete an item if we should
 			if (deleteIndex < dataList.size())
 			{
 				dataList.erase(dataList.begin() + deleteIndex);
-				g_renderGraphDirty = true;
+                dirty = true;
 				selectedIndex = std::min(selectedIndex, dataList.size() - 1);
 			}
 
@@ -1745,7 +1796,7 @@ struct Example :
 			{
 				CopyDataItemButNotName(newItem, dataList[duplicateIndex]);
 				dataList.push_back(newItem);
-				g_renderGraphDirty = true;
+                dirty = true;
 				selectedIndex = dataList.size() - 1;
 			}
 
@@ -1753,7 +1804,7 @@ struct Example :
 			if (wantsNew)
 			{
 				dataList.push_back(newItem);
-				g_renderGraphDirty = true;
+                dirty = true;
 				selectedIndex = dataList.size() - 1;
 			}
 
@@ -1761,7 +1812,7 @@ struct Example :
 			if (wantsMoveUp)
 			{
 				std::swap(dataList[selectedIndex - 1], dataList[selectedIndex]);
-				g_renderGraphDirty = true;
+                dirty = true;
 				selectedIndex = selectedIndex - 1;
 			}
 
@@ -1769,7 +1820,7 @@ struct Example :
 			if (wantsMoveDown)
 			{
 				std::swap(dataList[selectedIndex + 1], dataList[selectedIndex]);
-				g_renderGraphDirty = true;
+                dirty = true;
 				selectedIndex = selectedIndex + 1;
 			}
 
@@ -1778,7 +1829,7 @@ struct Example :
 			{
 				for (size_t i = selectedIndex; i > 0; i--)
 					std::swap(dataList[i - 1], dataList[i]);
-				g_renderGraphDirty = true;
+                dirty = true;
 				selectedIndex = 0;
 			}
 
@@ -1787,9 +1838,15 @@ struct Example :
 			{
 				for (size_t i = selectedIndex; (i + 1) < dataList.size(); ++i)
 					std::swap(dataList[i], dataList[i + 1]);
-				g_renderGraphDirty = true;
+                dirty = true;
 				selectedIndex = dataList.size() - 1;
 			}
+
+            g_renderGraphDirty |= dirty;
+            if (dirty)
+            {
+				m_editorActionStack.Push(g_renderGraphFrameCopy);
+            }
         }
         ImGui::EndChild();
 
@@ -2018,10 +2075,18 @@ struct Example :
             EnsureVariableExists("CameraJitter", VariableVisibility::Host, DataFieldType::Float2, "0.5f, 0.5f");
             EnsureVariableExists("ShadingRateImageTileSize", VariableVisibility::Host, DataFieldType::Uint, "16");
             EnsureVariableExists("WindowSize", VariableVisibility::Host, DataFieldType::Float2, "1.0f, 1.0f");
+
+			m_editorActionStack.Push(g_renderGraphFrameCopy);
         }
 
         // Global property editing
-        g_renderGraphDirty |= ShowUI(g_renderGraph, nullptr, nullptr, g_renderGraph, TypePaths::cEmpty);
+        bool changed = ShowUI(g_renderGraph, nullptr, nullptr, g_renderGraph, TypePaths::cEmpty);
+        g_renderGraphDirty = changed;
+
+        if (changed)
+        {
+			m_editorActionStack.Push(g_renderGraphFrameCopy);
+        }
 
         // todo: move
         if (g_renderGraphDirty)
@@ -2265,7 +2330,7 @@ struct Example :
         int32_t realIndex = deleteIndex - g_groupNodesStartId;
         g_renderGraph.editorGroupNodes.erase(g_renderGraph.editorGroupNodes.begin() + realIndex);
 
-        for (int32_t index = realIndex; index < g_renderGraph.editorGroupNodes.size(); ++index)
+        for (int32_t index = realIndex; index < g_renderGraph.editorGroupNodes.size(); ++index) 
         {
             int32_t newId = g_groupNodesStartId + index;
 
@@ -2445,22 +2510,34 @@ struct Example :
 		auto& io = ImGui::GetIO();
         if (io.KeyCtrl)
         {
-			if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_B)))
-			{
-				BuildGraph();
-		    }
+            if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_B)))
+            {
+                BuildGraph();
+            }
             else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_N)))
             {
                 CreateGraph();
             }
-			else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_O)))
-			{
-				OpenGraph();
-			}
-			else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_S)))
-			{
-				SaveGraph((io.KeyShift || g_renderGraphFileName.empty()) ? nullptr : g_renderGraphFileName.c_str());
-			}
+            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_O)))
+            {
+                OpenGraph();
+            }
+            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_S)))
+            {
+                SaveGraph((io.KeyShift || g_renderGraphFileName.empty()) ? nullptr : g_renderGraphFileName.c_str());
+            }
+            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Z)))
+            {
+                m_editorActionStack.Undo(g_renderGraph);
+                g_renderGraphDirty = true;
+                g_renderGraphStateUpdated = true;
+            }
+            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Y)))
+            {
+                m_editorActionStack.Redo(g_renderGraph);
+				g_renderGraphDirty = true;
+                g_renderGraphStateUpdated = true;
+            }
         }
 
         // Drag and drop file loading
@@ -2472,6 +2549,8 @@ struct Example :
                     LoadJSONFile(dragFileName.c_str());
             }
         }
+
+        g_renderGraphFrameCopy = g_renderGraph;
 
         HandleMainMenu();
 
@@ -2521,7 +2600,7 @@ struct Example :
 
             builder.Begin(nodeEditorId, GetNodeStyle(node), nodeDisabled);
 
-            if (g_renderGraphFirstFrame)
+            if (g_renderGraphFirstFrame || g_renderGraphStateUpdated)
             {
                 std::array<float, 2> editorPos = GetNodeEditorPos(node);
                 ed::SetNodePosition(nodeEditorId, ImVec2(editorPos[0], editorPos[1]));
@@ -2635,7 +2714,7 @@ struct Example :
         int32_t groupId = 0;
         for (auto& groupNode : g_renderGraph.editorGroupNodes)
         {
-            if (g_renderGraphFirstFrame)
+            if (g_renderGraphFirstFrame || g_renderGraphStateUpdated)
             {
                 groupNode.id = g_groupNodesStartId + groupId++;
 
@@ -2785,6 +2864,8 @@ struct Example :
                             *destNodeInfo[destPinIndex].inputNode = src.node;
                             *destNodeInfo[destPinIndex].inputNodePin = src.pin;
                             g_renderGraphDirty = true;
+
+							m_editorActionStack.Push(g_renderGraphFrameCopy);
                         }
 
                     }
@@ -2809,6 +2890,11 @@ struct Example :
                     }
                 }
 
+				if (!deleteLinkIds.empty())
+				{
+					m_editorActionStack.Push(g_renderGraphFrameCopy);
+				}
+
                 // delete links
                 for (int linkId : deleteLinkIds)
                 {
@@ -2832,6 +2918,11 @@ struct Example :
 
                 // Delete nodes from highest to lowest index
                 std::sort(deleteNodeIds.begin(), deleteNodeIds.end(), [](int a, int b) { return a >= b; });
+
+				if (!deleteNodeIds.empty())
+				{
+					m_editorActionStack.Push(g_renderGraphFrameCopy);
+				}
 
                 // delete each node
                 for (int deleteIndex : deleteNodeIds)
@@ -2904,7 +2995,7 @@ struct Example :
                 ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 0, 255));
 
                 DispatchLambdaAction(node,
-                    [](RenderGraphNode_ActionBase& node)
+                    [this](RenderGraphNode_ActionBase& node)
                     {
                         if (!node.condition.alwaysFalse)
                         {
@@ -2912,6 +3003,8 @@ struct Example :
                             {
                                 node.condition.alwaysFalse = !node.condition.alwaysFalse;
                                 g_renderGraphDirty = true;
+
+								m_editorActionStack.Push(g_renderGraphFrameCopy);
                             }
                         }
                         else
@@ -2920,6 +3013,8 @@ struct Example :
                             {
                                 node.condition.alwaysFalse = !node.condition.alwaysFalse;
                                 g_renderGraphDirty = true;
+
+								m_editorActionStack.Push(g_renderGraphFrameCopy);
                             }
                         }
                     }
@@ -2976,6 +3071,7 @@ struct Example :
                     m_newNodePositions[(int)g_renderGraph.nodes.size()] = newNodePostion;
 
                     g_renderGraphDirty = true;
+					m_editorActionStack.Push(g_renderGraphFrameCopy);
                 }
 
                 if (ImGui::MenuItem("Delete"))
@@ -3008,6 +3104,8 @@ struct Example :
 
                 int linkId = int(g_contextMenuLinkId.Get());
                 DeleteLink(linkId);
+
+				m_editorActionStack.Push(g_renderGraphFrameCopy);
             }
 
             ImGui::PopStyleColor();
@@ -3056,6 +3154,7 @@ struct Example :
                     g_renderGraph.nodes.push_back(newNode); \
                     m_newNodePositions[(int)g_renderGraph.nodes.size()] = newNodePostion; \
                     g_renderGraphDirty = true; \
+					m_editorActionStack.Push(g_renderGraphFrameCopy); \
                     g_createdNodeIndex = (int)g_renderGraph.nodes.size(); \
                 } \
                 ImGui::PopStyleColor();
@@ -3080,6 +3179,7 @@ struct Example :
                 ed::SetGroupSize(node.id, defaultSize);
 
                 g_renderGraphDirty = true;
+				m_editorActionStack.Push(g_renderGraphFrameCopy);
             }
 
             ImGui::EndPopup();
@@ -3094,6 +3194,7 @@ struct Example :
         ed::SetCurrentEditor(nullptr);
 
         g_renderGraphFirstFrame = false;
+        g_renderGraphStateUpdated = false;
 
         ImGui::End();
     }
@@ -3121,6 +3222,7 @@ struct Example :
 
     std::unordered_map<int, LinkInfo> m_links;
 
+    EditorActionStack m_editorActionStack;
 
 	void ImGuiRecentFiles()
 	{
@@ -3145,6 +3247,18 @@ struct Example :
 			}
 		}
 	}
+
+    void PushRenderGraphToEditorCommandStack()
+    {
+        m_editorActionStack.Push(g_renderGraph);
+
+		// Update node positions
+		for (int nodeIndex = 0; nodeIndex < (int)g_renderGraph.nodes.size(); ++nodeIndex)
+		{
+			ImVec2 pos = ed::GetNodePosition(nodeIndex + 1);
+			SetNodeEditorPos(g_renderGraph.nodes[nodeIndex], { pos.x, pos.y });
+		}
+    }
 };
 
 int Main(int argc, char** argv)
