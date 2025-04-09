@@ -6398,6 +6398,64 @@ public:
         return vr;
     }
 
+    RuntimeTypes::ViewableResource* PrepareSaveBuffer(const char* viewableResourceName, const char* functionName)
+    {
+		// If they didn't say that it wants to be read back, we won't have read it back!
+		if (m_wantsReadback.count(viewableResourceName) == 0)
+		{
+			Log(LogLevel::Error, "Python: %s tried to read back resource \"%s\" without calling SetWantReadback() first.", functionName, viewableResourceName);
+			return nullptr;
+		}
+
+		// Get the viewable resource
+		RuntimeTypes::ViewableResource* vr = nullptr;
+		for (const RenderGraphNode& node : g_interpreter.GetRenderGraph().nodes)
+		{
+			g_interpreter.RuntimeNodeDataLambda(
+				node,
+				[&](auto node, auto* runtimeData)
+				{
+					if (vr != nullptr || !runtimeData)
+						return;
+					for (RuntimeTypes::ViewableResource& viewableResource : runtimeData->m_viewableResources)
+					{
+						if (viewableResource.m_displayName == viewableResourceName)
+						{
+							vr = &viewableResource;
+							break;
+						}
+					}
+				}
+			);
+		}
+
+		// Not having the resource may be a temporary thing, due to "frames in flight" causing latency
+		if (vr == nullptr || vr->m_resourceReadback == nullptr)
+		{
+			Log(LogLevel::Warn, "Python: %s could not read back resource \"%s\".  It is either invalid or doesn't yet exist. You may need to run the technique before the resource exists.", functionName, viewableResourceName);
+			return nullptr;
+		}
+
+		bool isBuffer = false;
+		switch (vr->m_type)
+		{
+		case RuntimeTypes::ViewableResource::Type::Buffer:
+		case RuntimeTypes::ViewableResource::Type::ConstantBuffer:
+		{
+			isBuffer = true;
+			break;
+		}
+		}
+
+		if (!isBuffer)
+		{
+			Log(LogLevel::Warn, "Python: Host." __FUNCTION__ " resource \"%s\" is not a buffer.", viewableResourceName);
+			return nullptr;
+		}
+
+		return vr;
+    }
+
     bool SaveAsPNG(const char* fileName, const char* viewableResourceName, int arrayIndex, int mipIndex) override final
     {
         RuntimeTypes::ViewableResource* vr = PrepareSaveTexture(viewableResourceName, __FUNCTION__);
@@ -6517,6 +6575,23 @@ public:
         options.zIndex = arrayIndex;
         options.mipIndex = mipIndex;
         return ImageSave::SaveAsBinary(fileName, g_pd3dDevice, vr->m_resourceReadback, vr->m_origResourceDesc, options);
+    }
+
+    bool SaveBufferAsCSV(const char* fileName, const char* viewableResourceName)
+    {
+		RuntimeTypes::ViewableResource* vr = PrepareSaveBuffer(viewableResourceName, __FUNCTION__);
+		if (!vr)
+			return false;
+
+		std::vector<unsigned char> bytes(vr->m_size[0]);
+		unsigned char* data = nullptr;
+		vr->m_resourceReadback->Map(0, nullptr, reinterpret_cast<void**>(&data));
+		memcpy(bytes.data(), data, vr->m_size[0]);
+		vr->m_resourceReadback->Unmap(0, nullptr);
+
+		::SaveAsCSV(fileName, bytes.data(), vr->m_format, vr->m_formatCount, vr->m_count);
+
+        return true;
     }
 
     void RunTechnique(int runCount) override final
