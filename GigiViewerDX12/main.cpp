@@ -2729,8 +2729,8 @@ void ShowSystemVariables()
         ShowVariableDropDown("Jittered Projection Matrix", DataFieldType::Float4x4, g_systemVariables.JitteredProjMtx_varName);
         ShowVariableDropDown("Inverse Jittered Projection Matrix", DataFieldType::Float4x4, g_systemVariables.InvJitteredProjMtx_varName);
 
-        ShowVariableDropDown("Jittered View Projection Matrix", DataFieldType::Float4x4, g_systemVariables.ViewProjMtx_varName);
-        ShowVariableDropDown("Inverse Jittered View Projection Matrix", DataFieldType::Float4x4, g_systemVariables.InvViewProjMtx_varName);
+        ShowVariableDropDown("Jittered View Projection Matrix", DataFieldType::Float4x4, g_systemVariables.JitteredViewProjMtx_varName);
+        ShowVariableDropDown("Inverse Jittered View Projection Matrix", DataFieldType::Float4x4, g_systemVariables.InvJitteredViewProjMtx_varName);
 
         ShowVariableDropDown("Camera Jitter", DataFieldType::Float2, g_systemVariables.CameraJitter_varName);
         ShowVariableDropDown("Camera FOV", DataFieldType::Float, g_systemVariables.CameraFOV_varName);
@@ -4944,7 +4944,7 @@ void CopyImageToClipBoard(ID3D12Resource* readbackResource, D3D12_RESOURCE_DESC 
 
             for (int y = 0; y < decodedHeight; ++y)
             {
-                const unsigned char* src = &decodedPixels[(zIndex * decodedHeight + y) * decodedWidth * decodedFormatInfo.bytesPerPixel];
+                const unsigned char* src = &decodedPixels[y * decodedWidth * decodedFormatInfo.bytesPerPixel];
                 unsigned char* dest = (unsigned char*)buffer + sizeof(header) + (decodedHeight - 1 - y) * decodedWidth * 4;
 
                 for (int x = 0; x < decodedWidth; ++x)
@@ -5741,6 +5741,11 @@ void ShowResourceView()
                                 g_resourceView.mouseWasDownLastFrame = io.MouseDown[0];
                             }
                         }
+                        else
+                        {
+							g_resourceView.systemVarMouseState[2] = 0.0f;
+							g_resourceView.systemVarMouseState[3] = 0.0f;
+                        }
 						ImGui::EndChild();
 
                         
@@ -6512,6 +6517,64 @@ public:
         return vr;
     }
 
+    RuntimeTypes::ViewableResource* PrepareSaveBuffer(const char* viewableResourceName, const char* functionName)
+    {
+		// If they didn't say that it wants to be read back, we won't have read it back!
+		if (m_wantsReadback.count(viewableResourceName) == 0)
+		{
+			Log(LogLevel::Error, "Python: %s tried to read back resource \"%s\" without calling SetWantReadback() first.", functionName, viewableResourceName);
+			return nullptr;
+		}
+
+		// Get the viewable resource
+		RuntimeTypes::ViewableResource* vr = nullptr;
+		for (const RenderGraphNode& node : g_interpreter.GetRenderGraph().nodes)
+		{
+			g_interpreter.RuntimeNodeDataLambda(
+				node,
+				[&](auto node, auto* runtimeData)
+				{
+					if (vr != nullptr || !runtimeData)
+						return;
+					for (RuntimeTypes::ViewableResource& viewableResource : runtimeData->m_viewableResources)
+					{
+						if (viewableResource.m_displayName == viewableResourceName)
+						{
+							vr = &viewableResource;
+							break;
+						}
+					}
+				}
+			);
+		}
+
+		// Not having the resource may be a temporary thing, due to "frames in flight" causing latency
+		if (vr == nullptr || vr->m_resourceReadback == nullptr)
+		{
+			Log(LogLevel::Warn, "Python: %s could not read back resource \"%s\".  It is either invalid or doesn't yet exist. You may need to run the technique before the resource exists.", functionName, viewableResourceName);
+			return nullptr;
+		}
+
+		bool isBuffer = false;
+		switch (vr->m_type)
+		{
+		case RuntimeTypes::ViewableResource::Type::Buffer:
+		case RuntimeTypes::ViewableResource::Type::ConstantBuffer:
+		{
+			isBuffer = true;
+			break;
+		}
+		}
+
+		if (!isBuffer)
+		{
+			Log(LogLevel::Warn, "Python: Host." __FUNCTION__ " resource \"%s\" is not a buffer.", viewableResourceName);
+			return nullptr;
+		}
+
+		return vr;
+    }
+
     bool SaveAsPNG(const char* fileName, const char* viewableResourceName, int arrayIndex, int mipIndex) override final
     {
         RuntimeTypes::ViewableResource* vr = PrepareSaveTexture(viewableResourceName, __FUNCTION__);
@@ -6631,6 +6694,23 @@ public:
         options.zIndex = arrayIndex;
         options.mipIndex = mipIndex;
         return ImageSave::SaveAsBinary(fileName, g_pd3dDevice, vr->m_resourceReadback, vr->m_origResourceDesc, options);
+    }
+
+    bool SaveBufferAsCSV(const char* fileName, const char* viewableResourceName)
+    {
+		RuntimeTypes::ViewableResource* vr = PrepareSaveBuffer(viewableResourceName, __FUNCTION__);
+		if (!vr)
+			return false;
+
+		std::vector<unsigned char> bytes(vr->m_size[0]);
+		unsigned char* data = nullptr;
+		vr->m_resourceReadback->Map(0, nullptr, reinterpret_cast<void**>(&data));
+		memcpy(bytes.data(), data, vr->m_size[0]);
+		vr->m_resourceReadback->Unmap(0, nullptr);
+
+		::SaveAsCSV(fileName, bytes.data(), vr->m_format, vr->m_formatCount, vr->m_count);
+
+        return true;
     }
 
     void RunTechnique(int runCount) override final
@@ -7384,6 +7464,11 @@ int main(int argc, char** argv)
                 g_runPyArgs.push_back(ToWideString(argv[argumentIndex]));
 
             break;
+        }
+        else if (!_stricmp(argv[argIndex], "-logdebuglayer"))
+        {
+            g_debugLayerShown = true;
+            argIndex++;
         }
         else if (!_stricmp(argv[argIndex], "-nodebuglayer"))
         {

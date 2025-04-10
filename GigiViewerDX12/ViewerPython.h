@@ -50,6 +50,7 @@ public:
 	virtual bool SaveAsHDR(const char* fileName, const char* viewableResourceName, int arrayIndex, int mipIndex) = 0;
 	virtual bool SaveAsCSV(const char* fileName, const char* viewableResourceName, int arrayIndex, int mipIndex) = 0;
 	virtual bool SaveAsBinary(const char* fileName, const char* viewableResourceName, int arrayIndex, int mipIndex) = 0;
+	virtual bool SaveBufferAsCSV(const char* fileName, const char* viewableResourceName) = 0;
 	virtual void RunTechnique(int runCount) = 0;
 	virtual void SetFrameIndex(int frameIndex) = 0;
 	virtual void WaitOnGPU() = 0;

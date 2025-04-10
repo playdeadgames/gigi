@@ -395,6 +395,20 @@ static PyObject* Python_SaveAsBinary(PyObject* self, PyObject* args)
     return ret;
 }
 
+static PyObject* Python_SaveBufferAsCSV(PyObject* self, PyObject* args)
+{
+	const char* viewableResourceName = nullptr;
+	const char* fileName = nullptr;
+	if (!PyArg_ParseTuple(args, "ss|ii:" __FUNCTION__, &fileName, &viewableResourceName))
+		return PyErr_Format(PyExc_TypeError, "type error in " __FUNCTION__ "()");
+
+	bool success = g_interface->SaveBufferAsCSV(fileName, viewableResourceName);
+
+	PyObject* ret = PyBool_FromLong(success ? 1 : 0);
+	Py_INCREF(ret);
+	return ret;
+}
+
 static PyObject* Python_RunTechnique(PyObject* self, PyObject* args)
 {
     int runCount = 1;
@@ -1063,7 +1077,8 @@ void PythonInit(PythonInterface* interface)
         {"SaveAsEXR", Python_SaveAsEXR, METH_VARARGS, "Saves a texture. Host.SetWantReadback must have been called prior."},
         {"SaveAsHDR", Python_SaveAsHDR, METH_VARARGS, "Saves a texture. Host.SetWantReadback must have been called prior."},
         {"SaveAsCSV", Python_SaveAsCSV, METH_VARARGS, "Saves a texture. Host.SetWantReadback must have been called prior."},
-        {"SaveAsBinary", Python_SaveAsBinary, METH_VARARGS, "Saves a texture. Host.SetWantReadback must have been called prior."},
+		{"SaveAsBinary", Python_SaveAsBinary, METH_VARARGS, "Saves a texture. Host.SetWantReadback must have been called prior."},
+		{"SaveBufferAsCSV", Python_SaveBufferAsCSV, METH_VARARGS, "Saves a buffer. Host.SetWantReadback must have been called prior."},
         {"RunTechnique", Python_RunTechnique, METH_VARARGS, "Runs the technique N times."},
         {"Log", Python_Log, METH_VARARGS, "Writes a message to the log."},
         {"Print", Python_Print, METH_VARARGS, "Writes a message to the log as INFO."},

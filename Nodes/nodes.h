@@ -589,6 +589,9 @@ namespace FrontEndNodesNoCaching
                 RenderGraphNode_Action_DrawCall& node = nodeBase.actionDrawCall;
                 for (NodePinConnection& connection : node.connections)
                 {
+                    if (connection.dstNode.empty() || connection.dstPin.empty())
+                        continue;
+
                     PinInfo info;
                     info.srcPin = connection.srcPin;
                     info.dstNode = &connection.dstNode;
