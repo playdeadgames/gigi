@@ -704,6 +704,11 @@ const std::unordered_map<ID3D12Resource*, D3D12_RESOURCE_STATES>& importantResou
 							desc.m_stride = (UINT)m_renderGraph.structs[shaderResourceBuffer.typeStruct.structIndex].sizeInBytes;
 						else
 							desc.m_stride = DataFieldTypeInfo(shaderResourceBuffer.type).typeBytes;
+                        if (desc.m_stride == 0)
+                        {
+                            m_logFn(LogLevel::Error, "Buffer stride is zero \"%s\"", resourceNode.resourceBuffer.name.c_str());
+                            return false;
+                        }
 						desc.m_count = resourceInfo.m_size / desc.m_stride;
 					}
 					else

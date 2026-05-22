@@ -454,7 +454,14 @@ bool GigiInterpreterPreviewWindowDX12::OnNodeAction(const RenderGraphNode_Action
 
 		// Do fixed function calculations on dispatch size
 		for (int i = 0; i < 3; ++i)
+        {
+            if (node.dispatchSize.divide[i] == 0)
+            {
+                m_logFn(LogLevel::Error, "compute shader node \"%s\" has a dispatch size divide of 0, which is not allowed", node.name.c_str());
+                return false;
+            }
 			dispatchSize[i] = ((dispatchSize[i] + node.dispatchSize.preAdd[i]) * node.dispatchSize.multiply[i]) / node.dispatchSize.divide[i] + node.dispatchSize.postAdd[i];
+        }
 
 		// do numThreads calculations. Divide by numThreads but round up.
 		unsigned int origDispatchSize[3] = { 1, 1, 1 };

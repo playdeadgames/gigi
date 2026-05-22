@@ -510,8 +510,8 @@ bool GigiInterpreterPreviewWindowDX12::DrawCall_MakeRootSignature(const RenderGr
 
 				psoDesc.BlendState.RenderTarget[i] = D3D12_RENDER_TARGET_BLEND_DESC{
 					node.colorTargetSettings[i].enableBlending, FALSE,
-					DrawBlendModeToD3D12_BLEND(node.colorTargetSettings[i].srcBlend), DrawBlendModeToD3D12_BLEND(node.colorTargetSettings[i].destBlend), D3D12_BLEND_OP_ADD,
-					DrawBlendModeToD3D12_BLEND(node.colorTargetSettings[i].srcBlendAlpha), DrawBlendModeToD3D12_BLEND(node.colorTargetSettings[i].destBlendAlpha), D3D12_BLEND_OP_ADD,
+					DrawBlendModeToD3D12_BLEND(node.colorTargetSettings[i].srcBlend), DrawBlendModeToD3D12_BLEND(node.colorTargetSettings[i].destBlend), DrawBlendOpToD3D12_BLEND_OP(node.colorTargetSettings[i].blendOp),
+					DrawBlendModeToD3D12_BLEND(node.colorTargetSettings[i].srcBlendAlpha), DrawBlendModeToD3D12_BLEND(node.colorTargetSettings[i].destBlendAlpha), DrawBlendOpToD3D12_BLEND_OP(node.colorTargetSettings[i].blendOpAlpha),
 					D3D12_LOGIC_OP_NOOP,
 					writeChannelFlags
 				};
@@ -610,6 +610,11 @@ bool GigiInterpreterPreviewWindowDX12::DrawCall_MakeRootSignature(const RenderGr
 
 				}
 			}
+
+            if (sampleCount == -1)
+            {
+                sampleCount = 1;
+            }
 
             GigiAssert(sampleCount > 0, "sampleCount cannot be 0");
 			psoDesc.SampleDesc.Count = sampleCount;

@@ -326,6 +326,7 @@ STRUCT_BEGIN(ShaderResource, "A declaration of a resource that a shader wants")
     STRUCT_FIELD(ShaderResourceTexture, texture, {}, "Data specific to textures", 0)
     STRUCT_FIELD(BackendRestriction, backends, {}, "The backends this resource is present for.", SCHEMA_FLAG_UI_COLLAPSABLE)
     STRUCT_FIELD(bool, allowAtomicOps, false, "Nedeed by WebGPU. Check this box to allow atopic operations on this field.", 0)
+    STRUCT_FIELD(bool, rasterOrderView, false, "Use as raster order view. Only affects read/write resources", 0)
 
     STRUCT_FIELD(int, registerIndex, -1, "For root signatures and shader code that wants registers declared. Calculated before backend code is called, for convenience of backends.", SCHEMA_FLAG_NO_SERIALIZE)
     STRUCT_FIELD(std::string, registerSpaceString, "", "Displayed after the register in the shader", SCHEMA_FLAG_NO_SERIALIZE)

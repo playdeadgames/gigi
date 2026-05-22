@@ -285,6 +285,23 @@ inline D3D12_BLEND DrawBlendModeToD3D12_BLEND(DrawBlendMode mode)
 	}
 }
 
+inline D3D12_BLEND_OP DrawBlendOpToD3D12_BLEND_OP(DrawBlendOp op)
+{
+	switch (op)
+	{
+		case DrawBlendOp::Add: return D3D12_BLEND_OP_ADD;
+		case DrawBlendOp::Subtract: return D3D12_BLEND_OP_SUBTRACT;
+		case DrawBlendOp::RevSubtract: return D3D12_BLEND_OP_REV_SUBTRACT;
+		case DrawBlendOp::Min: return D3D12_BLEND_OP_MIN;
+		case DrawBlendOp::Max: return D3D12_BLEND_OP_MAX;
+		default:
+		{
+			GigiAssert(false, "Unhandled DrawBlendOp");
+			return D3D12_BLEND_OP_ADD;
+		}
+	}
+}
+
 struct DataFieldTypeInfoStructDX12
 {
 	DataFieldTypeInfoStructDX12(DataFieldComponentType type, int bytes, int count, DXGI_FORMAT _componentFormat, DXGI_FORMAT _typeFormat, int _typeFormatCount)

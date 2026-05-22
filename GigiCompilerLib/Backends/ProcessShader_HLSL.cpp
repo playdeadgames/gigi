@@ -83,7 +83,18 @@ void ProcessShaderOptions_HLSL::WriteResourceDefinition(const ProcessShaderOptio
         case ShaderResourceAccessType::UAV:
         case ShaderResourceAccessType::SRV:
         {
-            const char* typePrefix = (resource.access == ShaderResourceAccessType::UAV) ? "RW" : "";
+            const char* typePrefix = "";
+            if (resource.access == ShaderResourceAccessType::UAV)
+            {
+                 if (resource.rasterOrderView)
+                 {
+                     typePrefix = "RasterizerOrdered";
+                 }
+                 else
+                 {
+                     typePrefix = "RW";
+                 }
+            }
             const char* registerType = (resource.access == ShaderResourceAccessType::UAV) ? "u" : "t";
 
             switch (resource.type)
@@ -95,7 +106,7 @@ void ProcessShaderOptions_HLSL::WriteResourceDefinition(const ProcessShaderOptio
                     const char* textureType = "";
                     switch (resource.texture.dimension)
                     {
-                        case TextureDimensionType::Texture2D: textureType = "Texture2D"; break;
+                        case TextureDimensionType::Texture2D:  textureType = "Texture2D"; break;
                         case TextureDimensionType::Texture2DArray: textureType = "Texture2DArray"; break;
                         case TextureDimensionType::Texture3D: textureType = "Texture3D"; break;
                         case TextureDimensionType::TextureCube:
