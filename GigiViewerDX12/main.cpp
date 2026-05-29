@@ -573,6 +573,7 @@ struct ShowWindowsState
     bool AMDFrameInterpolation = false;
     bool Audio = false;
     bool WebCam = false;
+    bool PassCulling = false;
 };
 ShowWindowsState g_showWindows;
 
@@ -1554,6 +1555,7 @@ void HandleMainMenu()
             ImGuiMenuItem("Log", 0, "", &g_showWindows.Log);
             ImGuiMenuItem("Render Graph", 0, "", &g_showWindows.RenderGraph);
             ImGuiMenuItem("Profiler", 0, "", &g_showWindows.Profiler);
+            ImGuiMenuItem("Pass Culling", 0, "", &g_showWindows.PassCulling);
 
             if (!g_allowAMDFrameInterpolation)
             {
@@ -7258,6 +7260,122 @@ void ShowProfilerWindow()
     ImGui::End();
 }
 
+void ShowPassCullingWindow()
+{
+    if (!g_showWindows.PassCulling || g_hideUI)
+        return;
+
+    if (!ImGui::Begin("Pass Culling", &g_showWindows.PassCulling))
+    {
+        ImGui::End();
+        return;
+    }
+
+    if (ImGui::Checkbox("Enable Pass Culling", &g_interpreter.m_passCullingEnabled))
+        g_interpreter.MarkPassCullingDirty();
+
+    ImGui::TextWrapped(
+        "Select the resources you want produced. All passes that don't contribute to "
+        "writing them (directly or transitively) will be skipped during execution.");
+
+    ImGui::Separator();
+
+    const RenderGraph& renderGraph = g_interpreter.GetRenderGraph();
+
+    // Buttons that operate on the full target set
+    if (ImGui::Button("Select None"))
+    {
+        if (!g_interpreter.m_passCullingTargets.empty())
+        {
+            g_interpreter.m_passCullingTargets.clear();
+            g_interpreter.MarkPassCullingDirty();
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Select All"))
+    {
+        size_t prevSize = g_interpreter.m_passCullingTargets.size();
+        for (const RenderGraphNode& node : renderGraph.nodes)
+        {
+            if (GetNodeIsResourceNode(node))
+                g_interpreter.m_passCullingTargets.insert(GetNodeName(node));
+        }
+        if (g_interpreter.m_passCullingTargets.size() != prevSize)
+            g_interpreter.MarkPassCullingDirty();
+    }
+
+    // Report keep set status while we're here so the user can see the effect of their selection.
+    int totalActions = 0;
+    int totalResources = 0;
+    for (const RenderGraphNode& node : renderGraph.nodes)
+    {
+        if (GetNodeIsResourceNode(node))
+            ++totalResources;
+        else
+            ++totalActions;
+    }
+
+    if (g_interpreter.m_passCullingEnabled)
+    {
+        int kept = (int)g_interpreter.m_passCullingKeepActions.size();
+        ImGui::Text("Keeping %d / %d action passes (%d culled).",
+            kept, totalActions, totalActions - kept);
+    }
+    else
+    {
+        ImGui::TextDisabled("Culling is disabled. All %d action passes run.", totalActions);
+    }
+
+    ImGui::Separator();
+
+    // List resources grouped by type. Shader constants are intentionally omitted —
+    // they're CPU-uploaded, never produced by a pass, so they wouldn't keep anything alive.
+    static const struct { int variantIndex; const char* label; } kGroups[] = {
+        { RenderGraphNode::c_index_resourceTexture, "Textures" },
+        { RenderGraphNode::c_index_resourceBuffer, "Buffers" },
+    };
+
+    for (const auto& group : kGroups)
+    {
+        // Collect resource names of this type, sorted alphabetically.
+        std::vector<std::string> names;
+        for (const RenderGraphNode& node : renderGraph.nodes)
+        {
+            if (node._index != group.variantIndex)
+                continue;
+            names.push_back(GetNodeName(node));
+        }
+        if (names.empty())
+            continue;
+
+        std::sort(names.begin(), names.end());
+
+        char header[128];
+        sprintf_s(header, "%s (%d)", group.label, (int)names.size());
+        if (!ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen))
+            continue;
+
+        ImGui::Indent();
+        for (const std::string& name : names)
+        {
+            bool selected = g_interpreter.m_passCullingTargets.count(name) > 0;
+            ImGui::PushID(name.c_str());
+            if (ImGui::Checkbox(name.c_str(), &selected))
+            {
+                if (selected)
+                    g_interpreter.m_passCullingTargets.insert(name);
+                else
+                    g_interpreter.m_passCullingTargets.erase(name);
+                g_interpreter.MarkPassCullingDirty();
+            }
+            ImGui::PopID();
+        }
+        ImGui::Unindent();
+    }
+
+    ImGui::End();
+}
+
 void ShowRenderGraphWindow()
 {
     if (!g_showWindows.RenderGraph || g_hideUI)
@@ -7331,19 +7449,29 @@ void ShowRenderGraphWindow()
         if (!g_showEvenHidden && hideInViewer)
             continue;
 
+        bool nodeIsCulled = g_interpreter.IsPassCulled(nodeIndex);
+
         // collapsing header
         {
+            bool pushedHeaderColor = false;
             if (nodeIsInErrorState)
+            {
                 ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.6f, 0.0f, 0.0f, 1.0f));
-            else if (nodeConditionIsFalse)
+                pushedHeaderColor = true;
+            }
+            else if (nodeConditionIsFalse || nodeIsCulled)
+            {
                 ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.5f, 0.5f, 0.5f, 0.5f));
+                pushedHeaderColor = true;
+            }
 
             char nodeLabel[512];
-            sprintf_s(nodeLabel, "%s: %s%s", nodeTypeName.c_str(), nodeName.c_str(), 
-                hideInViewer ? " (hideInViewer)" : "");
+            sprintf_s(nodeLabel, "%s: %s%s%s", nodeTypeName.c_str(), nodeName.c_str(),
+                hideInViewer ? " (hideInViewer)" : "",
+                nodeIsCulled ? " (culled)" : "");
             bool collapsingHeaderOpen = ImGui::CollapsingHeader(nodeLabel);
 
-            if (nodeIsInErrorState || nodeConditionIsFalse)
+            if (pushedHeaderColor)
                 ImGui::PopStyleColor();
 
             if (!collapsingHeaderOpen)
@@ -8831,6 +8959,7 @@ void RenderFrame(bool forceExecute)
     ShowSystemVariables();
     ShowProfilerWindow();
     ShowRenderGraphWindow();
+    ShowPassCullingWindow();
     ShowResourceView();
 
     g_interpreter.ShowUI(g_hideUI, g_techniquePaused);

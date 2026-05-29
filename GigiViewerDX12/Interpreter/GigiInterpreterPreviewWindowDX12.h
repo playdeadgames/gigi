@@ -9,6 +9,7 @@
 #include "GigiCompilerLib/gigiinterpreter.h"
 #include "GigiCompilerLib/Utils.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <d3d12.h>
 #include "DX12Utils/UploadBufferTracker.h"
@@ -350,6 +351,10 @@ public:
 		#include "external/df_serialize/_fillunsetdefines.h"
 		#include "Schemas/RenderGraphNodesVariant.h"
 		// clang-format on
+
+		// The render graph just changed; node indices and resource names may have shifted,
+		// so prune any culling targets that no longer exist and recompute the keep set.
+		MarkPassCullingDirty();
 	}
 
 	bool SourceFilesModified() const
@@ -530,6 +535,10 @@ public:
 
             SetDescriptorHeaps();
 
+			// Make sure the pass culling keep-set reflects the current graph and target selection.
+			if (m_passCullingDirty)
+				RebuildPassCullingSet();
+
 			// Execute
 			ret = IGigiInterpreter<RuntimeTypes>::Execute();
 
@@ -682,6 +691,38 @@ public:
 	};
 
 	std::unordered_map<std::string, ImportedResourceDesc> m_importedResources;
+
+	// Pass culling: when enabled, only action nodes that participate in producing one of
+	// the resource nodes whose name is in m_passCullingTargets are executed each frame.
+	// Resource nodes always execute (they manage state/uploads). Targets are stored by node
+	// name so the selection survives recompiles; the action-node keep set is recomputed on
+	// each compile or whenever the selection changes.
+	bool m_passCullingEnabled = false;
+	std::unordered_set<std::string> m_passCullingTargets;
+	std::unordered_set<int> m_passCullingKeepActions;
+	bool m_passCullingDirty = false;
+
+	void MarkPassCullingDirty() { m_passCullingDirty = true; }
+
+	void RebuildPassCullingSet();
+
+	bool ShouldExecutePassNode(int nodeIndex, const RenderGraphNode& node) override final
+	{
+		if (!m_passCullingEnabled)
+			return true;
+		if (GetNodeIsResourceNode(node))
+			return true;
+		return m_passCullingKeepActions.count(nodeIndex) > 0;
+	}
+
+	bool IsPassCulled(int nodeIndex) const
+	{
+		if (!m_passCullingEnabled)
+			return false;
+		if (GetNodeIsResourceNode(m_renderGraph.nodes[nodeIndex]))
+			return false;
+		return m_passCullingKeepActions.count(nodeIndex) == 0;
+	}
 
 private:
 	using IGigiInterpreter<RuntimeTypes>::Execute;

@@ -11,6 +11,94 @@
 
 GigiInterpreterPreviewWindowDX12* GigiInterpreterPreviewWindowDX12::s_interpreter = nullptr;
 
+void GigiInterpreterPreviewWindowDX12::RebuildPassCullingSet()
+{
+	m_passCullingDirty = false;
+	m_passCullingKeepActions.clear();
+
+	const RenderGraph& renderGraph = m_renderGraph;
+
+	// Drop any selected targets that no longer correspond to a resource node in the graph.
+	{
+		std::unordered_set<std::string> validNames;
+		validNames.reserve(renderGraph.nodes.size());
+		for (const RenderGraphNode& node : renderGraph.nodes)
+		{
+			if (GetNodeIsResourceNode(node))
+				validNames.insert(GetNodeName(node));
+		}
+		for (auto it = m_passCullingTargets.begin(); it != m_passCullingTargets.end(); )
+		{
+			if (validNames.count(*it) == 0)
+				it = m_passCullingTargets.erase(it);
+			else
+				++it;
+		}
+	}
+
+	if (m_passCullingTargets.empty())
+		return;
+
+	// Translate the selected target names into resource-node indices.
+	std::vector<int> resourceQueue;
+	for (int i = 0; i < (int)renderGraph.nodes.size(); ++i)
+	{
+		const RenderGraphNode& node = renderGraph.nodes[i];
+		if (!GetNodeIsResourceNode(node))
+			continue;
+		if (m_passCullingTargets.count(GetNodeName(node)) > 0)
+			resourceQueue.push_back(i);
+	}
+
+	// BFS backwards through writers: each producer of a needed resource is kept, and its
+	// input resources are then added to the queue so their producers are kept transitively.
+	std::unordered_set<int> visitedResources;
+	while (!resourceQueue.empty())
+	{
+		int resourceIndex = resourceQueue.back();
+		resourceQueue.pop_back();
+		if (!visitedResources.insert(resourceIndex).second)
+			continue;
+
+		for (int actionIndex = 0; actionIndex < (int)renderGraph.nodes.size(); ++actionIndex)
+		{
+			const RenderGraphNode& actionNode = renderGraph.nodes[actionIndex];
+			if (GetNodeIsResourceNode(actionNode))
+				continue;
+
+			int pinCount = GetNodePinCount(actionNode);
+
+			bool writesResource = false;
+			for (int pinIndex = 0; pinIndex < pinCount; ++pinIndex)
+			{
+				int connectedResource = GetResourceNodeForPin(renderGraph, actionNode, pinIndex);
+				if (connectedResource != resourceIndex)
+					continue;
+
+				InputNodeInfo info = GetNodePinInputNodeInfo(actionNode, pinIndex);
+				if (!ShaderResourceTypeIsReadOnly(info.access))
+				{
+					writesResource = true;
+					break;
+				}
+			}
+
+			if (!writesResource)
+				continue;
+
+			m_passCullingKeepActions.insert(actionIndex);
+
+			// This action's inputs are now also required upstream.
+			for (int pinIndex = 0; pinIndex < pinCount; ++pinIndex)
+			{
+				int inputResource = GetResourceNodeForPin(renderGraph, actionNode, pinIndex);
+				if (inputResource != -1 && visitedResources.count(inputResource) == 0)
+					resourceQueue.push_back(inputResource);
+			}
+		}
+	}
+}
+
 void RuntimeTypes::RenderGraphNode_Base::Release(GigiInterpreterPreviewWindowDX12& interpreter)
 {
 	for (RuntimeTypes::ViewableResource& viewableResource : m_viewableResources)

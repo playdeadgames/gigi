@@ -951,6 +951,10 @@ public:
 		}
 	}
 
+	// Hook for derived interpreters to skip executing a node during Execute().
+	// Only consulted from Execute(); Compile()/Init never call this so node setup is unaffected.
+	virtual bool ShouldExecutePassNode(int nodeIndex, const RenderGraphNode& node) { return true; }
+
 	bool Execute()
 	{
 		if (m_compileResult != GigiCompileResult::OK)
@@ -961,6 +965,9 @@ public:
 		for (int nodeIndex : m_renderGraph.flattenedNodeList)
 		{
 			RenderGraphNode& node = m_renderGraph.nodes[nodeIndex];
+
+			if (!ShouldExecutePassNode(nodeIndex, node))
+				continue;
 
 			switch (node._index)
 			{
