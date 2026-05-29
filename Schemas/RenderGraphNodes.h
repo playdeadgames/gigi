@@ -339,6 +339,7 @@ STRUCT_INHERIT_BEGIN(RenderGraphNode_Resource_Buffer, RenderGraphNode_ResourceBa
     STRUCT_FIELD(ResourceVisibility, visibility, ResourceVisibility::Internal, "Who can see the buffer and who owns it", 0)
     STRUCT_FIELD(BufferFormatDesc, format, {}, "The format of the texture.", SCHEMA_FLAG_UI_COLLAPSABLE)
     STRUCT_FIELD(BufferCountDesc, count, {}, "How many items are in the buffer.", SCHEMA_FLAG_UI_COLLAPSABLE)
+    STRUCT_FIELD(bool, notCulledByDefault, false, "When loaded into the DX12 Viewer, this resource is pre-selected in the Pass Culling window so its producers are kept whenever pass culling is enabled.", 0)
 STRUCT_END()
 
 STRUCT_INHERIT_BEGIN(RenderGraphNode_Resource_ShaderConstants, RenderGraphNode_ResourceBase, "Declares a shader constant buffer")
@@ -372,6 +373,7 @@ STRUCT_INHERIT_BEGIN(RenderGraphNode_Resource_Texture, RenderGraphNode_ResourceB
     STRUCT_FIELD(std::string, loadFileName, "", "If not empty, it load it as an image. This is currently not exposed to users, and is created when shaders use an image token", SCHEMA_FLAG_NO_SERIALIZE)
     STRUCT_FIELD(bool, loadFileNameAsSRGB, true, "If true, the source file is treated as sRGB", SCHEMA_FLAG_NO_SERIALIZE)
     STRUCT_FIELD(Resource_Texture_MSAA, msaaSettings, {}, "MSAA Settings for Texture2DMS, multiple samples are stored per pixel for antialiasing", 0)
+    STRUCT_FIELD(bool, notCulledByDefault, false, "When loaded into the DX12 Viewer, this resource is pre-selected in the Pass Culling window so its producers are kept whenever pass culling is enabled.", 0)
 STRUCT_END()
 
 //========================================================

@@ -354,6 +354,22 @@ public:
 
 		// The render graph just changed; node indices and resource names may have shifted,
 		// so prune any culling targets that no longer exist and recompute the keep set.
+		// Also auto-add any resource node flagged in the editor with notCulledByDefault.
+		// Pass culling itself is left in whatever state the user had it; this only seeds
+		// the selection so it takes effect the moment the user enables culling.
+		for (const RenderGraphNode& node : m_renderGraph.nodes)
+		{
+			if (node._index == RenderGraphNode::c_index_resourceTexture)
+			{
+				if (node.resourceTexture.notCulledByDefault)
+					m_passCullingTargets.insert(node.resourceTexture.name);
+			}
+			else if (node._index == RenderGraphNode::c_index_resourceBuffer)
+			{
+				if (node.resourceBuffer.notCulledByDefault)
+					m_passCullingTargets.insert(node.resourceBuffer.name);
+			}
+		}
 		MarkPassCullingDirty();
 	}
 
