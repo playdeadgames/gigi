@@ -694,6 +694,7 @@ struct Example :
 
 			nfdchar_t* outPath = nullptr;
 			if (NFD_OpenDialog("gg", exploreLocation.c_str(), &outPath) == NFD_OKAY)
+            {
 				LoadJSONFile(outPath);
             }
 		}
